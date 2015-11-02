@@ -15,6 +15,88 @@ from mpl_toolkits.basemap import Basemap
 from scipy import ndimage 
 from atmPy.tools import plt_tools
 from atmPy import vertical_profile
+from atmPy.aerosols import sampling_efficiency
+
+
+
+
+
+def manta_sample_efficiency(particle_diameters = np.logspace(np.log10(0.14), np.log10(2.5),100),
+                            manta_speed = 30, # m/s
+                            pressure = 67., #kPa
+                            main_inlet_diameter = 4.65 * 1e-3,
+                            pick_off_diameter = 2.15 * 1e-3,
+                            pick_off_flow_rate = 3,
+                            lfe_diameter = 0.7 * 1e-3,
+                            verbose = False):
+
+    """Returns the manta sample efficiency for the POPS instrument (up most inlet)"""
+
+
+
+    main_inlet_bent = sampling_efficiency.loss_in_a_bent_section_of_circular_tubing(
+                                                  pressure = pressure,         # kPa
+                                                  particle_diameter = particle_diameters,  # µm
+                                                  tube_air_velocity = manta_speed, # m/s
+                                                  tube_diameter = main_inlet_diameter,   # m
+                                                  angle_of_bend = 90,       # degrees
+                                                  flow_type = 'auto',
+                                                  verbose = False)
+
+    t_pick_of = sampling_efficiency.loss_in_a_T_junction(particle_diameter=particle_diameters,
+                                       particle_velocity=30, 
+                                       pick_of_tube_diameter=pick_off_diameter, 
+                                       verbose=False)
+
+    laminar_flow_element = sampling_efficiency.loss_at_an_abrupt_contraction_in_circular_tubing(pressure=pressure,  # kPa
+                                                         particle_diameter=particle_diameters,  # µm
+                                                         tube_air_velocity=False,  # m/s
+                                                         flow_rate_in_inlet=pick_off_flow_rate,  # cc/s
+                                                         tube_diameter=pick_off_diameter,  # m
+                                                         contraction_diameter=lfe_diameter,  # m
+                                                         contraction_angle=90,  # degrees
+                                                         verbose=False,
+                                                         )
+
+    bent_before_pops = sampling_efficiency.loss_in_a_bent_section_of_circular_tubing(
+                                                  pressure = pressure,         # kPa
+                                                  particle_diameter = particle_diameters,  # µm
+                                                  tube_air_velocity = False, # m/s
+                                                  tube_air_flow_rate = pick_off_flow_rate,
+                                                  tube_diameter = pick_off_diameter,   # m
+                                                  angle_of_bend = 90,       # degrees
+                                                  flow_type = 'auto',
+                                                  verbose = False)
+
+    gravitational_loss = sampling_efficiency.gravitational_loss_in_circular_tube(pressure=101.3,  # kPa
+                                            particle_diameter=particle_diameters,  # µm
+                                            tube_diameter=pick_off_diameter,  # m
+                                            tube_length=0.25,  # m
+                                            incline_angle=0,  # degrees from horizontal (0-90)
+                                            flow_rate=3,  # cc/s
+                                            mean_flow_velocity=False,  # 0.1061    # m/s)
+                                            flow_type='auto',
+                                            verbose=False)
+
+
+    loss_list = [main_inlet_bent, t_pick_of, laminar_flow_element, bent_before_pops, gravitational_loss]
+    names  = ['all_losses', 'main_inlet_bent', 't_pick_of', 'laminar_flow_element', 'bent_before_pops', 'gravitational_loss']
+
+    all_losses = 1
+    for l in loss_list:
+        all_losses *= l
+
+    loss_list.insert(0,all_losses)
+
+
+
+    df = pd.DataFrame(np.array(loss_list).transpose(), columns = names, index = particle_diameters*1e3)
+    df.index.name = 'diameters_nm'
+    # if 0:
+    #     fname = '/Users/htelg/data/20150414_Svalbard/particle_loss_in_inlet/sampling_efficiency.csv'
+    #     df.to_csv(fname)
+    return df
+
 
 
 def PMEL_extCoeff_TS_get_plot_save(dist, fname = False):
@@ -114,22 +196,35 @@ def PMEL_extCoeff_get_plot_save(dist_LS, fname = False, as_time_series = False):
 def plot_POPS_v_mSASP_OD_corr(sun_int_su, 
                               aods_corr, 
                               offset=[3.295,3.44,3.995,4.16], 
+                              additional_axes = False,
+                              rayleigh = False,
                               save_fig = '/Users/htelg/tmp/POPS_versus_miniSASP_OD.png'):
     """plots the OD from miniSASP versus that which we simulate from the POPS results.
     Data is corrected for airmass factor.
     Arguments
     ---------
     sun_int_su: sun_int_su instance
-    aod_corr: output of miniSASP.simulate_from_size_dist_LS"""
+    aod_corr: output of miniSASP.simulate_from_size_dist_LS
+    rayleigh: bool
+        if rayleigh is included or not."""
     
     airmassfct = False
-    a = sun_int_su.plot(offset=offset, airmassfct = airmassfct, move_max = False)
+    if not rayleigh:
+        rayleigh_corr = aods_corr
+    else:
+        rayleigh_corr = rayleigh
+    a = sun_int_su.plot(offset=offset, airmassfct = airmassfct, move_max = False, additional_axes = additional_axes, rayleigh = rayleigh_corr)
     f = a[0].get_figure()
     f.set_figwidth(15)
     # f.set_figheight(10)
-    a[0].set_xlabel('Optical depth')
-    for aa in a:
+    if rayleigh:
+        a[0].set_xlabel('Optical depth')
+    else:
+        a[0].set_xlabel('Arosol optical depth')
+    for e,aa in enumerate(a):
     #     aa.set_xlim((-0.06,0.39))
+        if e > 3:
+            break
         aa.set_xlim((-0.01,0.14))
         aa.set_ylim((0,3200))
         aa.grid()
@@ -145,17 +240,26 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
 #    ms1,ms2,ms3,ms4 = (a[0].get_lines()[-1],a[1].get_lines()[-1],a[2].get_lines()[-1],a[3].get_lines()[-1])
     for e,k in enumerate(keys):
         out = aods_corr[k]
-        g1 = a[e].get_lines()[-1]
-        g, = a[e].plot(out['sum'].values, out['sum'].index.values)
-        g.set_linewidth(2)
-        g.set_color('r')
-        g.set_label('POPS')
+        
+        
+        if rayleigh:
+            g1 = a[e].get_lines()[-1]
+            g, = a[e].plot(out['sum'].values, out['sum'].index.values)
+            g.set_linewidth(2)
+            g.set_color('r')
+            g.set_label('POPS')
 
         g2, = a[e].plot(out['aerosol'].values, out['aerosol'].index.values)
         g2.set_linewidth(2)
         g2.set_color('r')
-        g2.set_linestyle('--')
-        g2.set_label('AOD only')
+        
+        if rayleigh:
+            g2.set_linestyle('--')
+            g2.set_label('AOD only')
+        else:
+            g2.set_color('r')
+            g2.set_label('POPS')
+
 
 
         leg = a[e].legend(numpoints = 1,handlelength=1,  prop={'size':17})
@@ -249,7 +353,7 @@ def plot_map(town_label_loc = (50,50), town_label_alpha = 0.3):
     #                resolution='h'
                    ax = a
                   )
-    bmap
+    # bmap
     # Fill the globe with a blue color
     
     

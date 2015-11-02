@@ -9,7 +9,7 @@ def ReynoldsNoInPipe_fromFlowVelocity(v,d,roh = 1.2,mu= 18.27e-6):
 
     ry = (v*d*roh)/mu
     if ry > 2000:
-        print 'warning: reynolds number is larger than 2000'
+        print('warning: reynolds number is larger than 2000')
     return ry
 
 def ReynoldsNoInPipe_fromVFlowRate(fl,d,roh = 1.2,mu= 18.27e-6):
@@ -21,5 +21,5 @@ def ReynoldsNoInPipe_fromVFlowRate(fl,d,roh = 1.2,mu= 18.27e-6):
     A = np.pi*(d/2.)**2
     ry = (fl*1e-6*d*roh)/(mu*A)
     if ry > 2000:
-        print 'warning: reynolds number is larger than 2000'
+        print('warning: reynolds number is larger than 2000')
     return ry
