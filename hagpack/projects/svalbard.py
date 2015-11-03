@@ -396,7 +396,7 @@ def plot_map(town_label_loc = (50,50), town_label_alpha = 0.3):
     bmap.drawmapscale(lon_center - 0.35 , lat_center-0.075 , lon_center, lat_center, 10, barstyle='fancy', fontsize = 20)
     # a = img.get_axes()
     
-#    alpha = 0.3
+    alpha = 0.3
     a.annotate('Ny-Ålesund', xy=(xpt, ypt),  
     #                 xycoords='data',
                     xytext=town_label_loc, 
