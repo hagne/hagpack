@@ -16,10 +16,85 @@ from scipy import ndimage
 from atmPy.tools import plt_tools
 from atmPy import vertical_profile
 from atmPy.aerosols import sampling_efficiency
+from atmPy import sizedistribution
+import colorsys
+
+
+def read_gruvebadet_SMPS(fname):
+    df = pd.read_csv(fname, sep='\t', skiprows=10, skip_blank_lines=True, error_bad_lines = False, encoding='iso8859_5')
+
+    data = df.loc[:,[' 10.4', ' 11.1',
+           ' 12.0', ' 12.9', ' 13.8', ' 14.9', ' 16.0', ' 17.2', ' 18.4', ' 19.8',
+           ' 21.3', ' 22.9', ' 24.6', ' 26.4', ' 28.4', ' 30.5', ' 32.8', ' 35.2',
+           ' 37.9', ' 40.7', ' 43.7', ' 47.0', ' 50.5', ' 54.2', ' 58.3', ' 62.6',
+           ' 67.3', ' 72.3', ' 77.7', ' 83.5', ' 89.8', ' 96.5', '103.7', '111.4',
+           '119.7', '128.6', '138.2', '148.6', '159.6', '171.5', '184.3', '198.1',
+           '212.9', '228.8', '245.8', '264.2', '283.9', '305.1', '327.8', '352.3',
+           '378.6', '406.8', '437.1', '469.8']]
+
+    hk = df.drop(data.columns,axis=1)
+
+    hk.index = pd.to_datetime(hk.Date + ' ' + hk['Start Time'], format = '%m/%d/%y %H:%M:%S')
+    hk.index.name = 'Datetime_UTC'
+    hk = hk.drop(['Date', 'Start Time'], axis = 1)
+
+    data.index = hk.index
+
+    cols = data.columns.copy()
+
+    cols = cols.astype(float)
+
+    avg_dist = np.array((np.log10(cols[1:]) - np.log10(cols[:-1]))).mean()
+
+    bins = [cols[0] - avg_dist/2.]
+
+    for e,c in enumerate(cols):
+    #     delta = np.log10(cols[e]) - np.log10(bins[e])
+        newbin = 10**(np.log10(cols[e]) + avg_dist/2.)
+        bins.append(newbin)
+    bins = np.array(bins)
+
+    sd = sizedistribution.SizeDist_TS(data, bins, 'numberConcentration')
+    return sd, hk
+
+def read_gruvebadet_APS(fname):
+    df = pd.read_csv(fname, sep='\t', skiprows=12, skip_blank_lines=True, error_bad_lines = False, encoding='iso8859_5')
+
+    data = df.loc[:,['<0.523', '0.542', '0.583', '0.626', '0.673', '0.723', '0.777', '0.835', '0.898',
+           '0.965', '1.037', '1.114', '1.197', '1.286', '1.382', '1.486', '1.596',
+           '1.715', '1.843', '1.981', '2.129', '2.288', '2.458', '2.642', '2.839',
+           '3.051', '3.278', '3.523', '3.786', '4.068', '4.371', '4.698', '5.048',
+           '5.425', '5.829', '6.264', '6.732', '7.234', '7.774', '8.354', '8.977',
+           '9.647', '10.37', '11.14', '11.97', '12.86', '13.82', '14.86', '15.96',
+           '17.15', '18.43', '19.81']]
+    hk = df.drop(data.columns,axis=1)
+
+    hk.index = pd.to_datetime(hk.Date + ' ' + hk['Start Time'], format = '%m/%d/%y %H:%M:%S')
+    hk.index.name = 'Datetime_UTC'
+    hk = hk.drop(['Date', 'Start Time'], axis = 1)
+
+    data.index = hk.index
 
 
 
+    cols = data.columns.copy()
 
+    bins = [float(cols[0].strip('<'))]
+    cols = cols[1:]
+    cols = cols.astype(float)
+
+    avg_dist = np.array((np.log10(cols[1:]) - np.log10(cols[:-1]))).mean()
+
+    for e,c in enumerate(cols):
+    #     delta = np.log10(cols[e]) - np.log10(bins[e])
+        newbin = 10**(np.log10(cols[e]) + avg_dist/2.)
+        bins.append(newbin)
+    bins = np.array(bins)
+    bins *= 1e3
+    data = data.drop('<0.523', axis = 1)
+
+    sd = sizedistribution.SizeDist_TS(data, bins, 'numberConcentration')
+    return sd, hk
 
 def manta_sample_efficiency(particle_diameters = np.logspace(np.log10(0.14), np.log10(2.5),100),
                             manta_speed = 30, # m/s
@@ -198,7 +273,8 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
                               offset=[3.295,3.44,3.995,4.16], 
                               additional_axes = False,
                               rayleigh = False,
-                              save_fig = '/Users/htelg/tmp/POPS_versus_miniSASP_OD.png'):
+                              error = False,
+                              color = False):
     """plots the OD from miniSASP versus that which we simulate from the POPS results.
     Data is corrected for airmass factor.
     Arguments
@@ -206,7 +282,9 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
     sun_int_su: sun_int_su instance
     aod_corr: output of miniSASP.simulate_from_size_dist_LS
     rayleigh: bool
-        if rayleigh is included or not."""
+        if rayleigh is included or not.
+    color: bool, or matplotlib color
+        if bool, the color of the msasp channel is used"""
     
     airmassfct = False
     if not rayleigh:
@@ -214,6 +292,7 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
     else:
         rayleigh_corr = rayleigh
     a = sun_int_su.plot(offset=offset, airmassfct = airmassfct, move_max = False, additional_axes = additional_axes, rayleigh = rayleigh_corr)
+
     f = a[0].get_figure()
     f.set_figwidth(15)
     # f.set_figheight(10)
@@ -221,6 +300,8 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
         a[0].set_xlabel('Optical depth')
     else:
         a[0].set_xlabel('Arosol optical depth')
+    colors_fill = []
+    colors_l = []
     for e,aa in enumerate(a):
     #     aa.set_xlim((-0.06,0.39))
         if e > 3:
@@ -231,8 +312,24 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
         g = aa.get_lines()[-1]
         txt = g.get_label()
         aa.set_title(txt)
+        rgb_l = plt_tools.wavelength_to_rgb(float(txt.strip(' nm'))) * 0.8
+        hls = list(colorsys.rgb_to_hls(*rgb_l))
+        hls_sum = np.array(hls).sum()
+        # hls[1] *=2. # lightness ... makes it brighter
+        hls[1] = 0.8 # lightness ... makes it brighter
+        # hls[2] *=0.4 #saturation ... makes it more gray
+        hls[2] = 0.5 #saturation ... makes it more gray
+        if hls_sum == 0:
+            hls[1] = 0.6
+            hls[2] = 0.0
+        rgb = colorsys.hls_to_rgb(*hls)
+        colors_fill.append(rgb)
+        colors_l.append(rgb_l)
+        # print('rgb', rgb_l)
         g.set_label('miniSASP')
         aa.locator_params(axis = 'x', nbins = 6)
+    # print(colors_l)
+    # print(colors_fill)
 
     #     aa.vlines(0,0,3200)
     keys = list(aods_corr.keys())
@@ -240,24 +337,29 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
 #    ms1,ms2,ms3,ms4 = (a[0].get_lines()[-1],a[1].get_lines()[-1],a[2].get_lines()[-1],a[3].get_lines()[-1])
     for e,k in enumerate(keys):
         out = aods_corr[k]
-        
-        
+
+        if not np.any(color):
+            col_l = colors_l[e]
+
         if rayleigh:
-            g1 = a[e].get_lines()[-1]
             g, = a[e].plot(out['sum'].values, out['sum'].index.values)
             g.set_linewidth(2)
-            g.set_color('r')
+            g.set_color(col_l)
             g.set_label('POPS')
+        x = out['aerosol'].values
+        y = out['aerosol'].index.values
+        if np.any(error):
+            col_fill = colors_fill[e]
+            a[e].fill_betweenx(y, x * (1 - (error[0] / 100)), x * (1 + (error[1]/100)), color = col_fill)
 
-        g2, = a[e].plot(out['aerosol'].values, out['aerosol'].index.values)
+        g2, = a[e].plot(x,y )
         g2.set_linewidth(2)
-        g2.set_color('r')
-        
+        g2.set_color(col_l)
         if rayleigh:
             g2.set_linestyle('--')
             g2.set_label('AOD only')
         else:
-            g2.set_color('r')
+
             g2.set_label('POPS')
 
 
@@ -269,9 +371,6 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
         #     txt.set_fontsize(10)
         else:
             leg.set_visible(False)
-
-    if save_fig:
-        f.savefig(save_fig, dpi = 300)
     
     return a
 
@@ -334,9 +433,9 @@ def plot_map(town_label_loc = (50,50), town_label_alpha = 0.3):
     
     #### create relief
     sigma = 4
-    relief = ndimage.gaussian_filter(newFrame.values,  (sigma, 4*sigma) ,mode='nearest')
+    altitude = ndimage.gaussian_filter(newFrame.values,  (sigma, 4*sigma) ,mode='nearest')
     ls = LightSource(azdeg=360-70,altdeg=65)
-    relief = ls.shade(relief,plt.cm.gray)
+    relief = ls.shade(altitude,plt.cm.gray)
     
         
     #### Plot
@@ -417,7 +516,15 @@ def plot_map(town_label_loc = (50,50), town_label_alpha = 0.3):
     # a.text(xpt,ypt,'bla', color = 'b')
     # f = img.get_figure()
     f.set_size_inches((12,12))
-    return f,a,bmap
+    out = {}
+    out['f'] = f
+    out['a'] = a
+    out['bmap'] = bmap
+    out['data_xy'] = (x,y)
+    out['data_land_relief'] = relief[:,:,0]
+    out['data_land_altitude'] = altitude
+    out['data_water'] = water_masked
+    return out
     
     
 def add2map(bmap,hk):
