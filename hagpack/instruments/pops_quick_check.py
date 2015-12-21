@@ -3,6 +3,8 @@ from atmPy.atmosphere_standards import standard_atmosphere
 from atmPy import sizedistribution
 import os
 from IPython.display import Markdown, display
+import numpy as np
+import pylab as plt
 
 def printmd(string):
     display(Markdown(string))
@@ -79,13 +81,13 @@ def plot_dist(dist_TS,avg):
     return a,a2
 
 def do_all(fname,
-           bins,
            cal = False,
            from_scratch = True,
-           dir_out = '/Users/htelg/data/20151216_china_ping/',
+           dir_out = '/Users/htelg/tmp/',
            verbose = False,
            flow = 1, # in cc
            skip = 0,
+           bins= np.logspace(np.log10(140), np.log10(2500), 30),
 #            prefix = ''
           ):
     p,f = os.path.split(fname)
