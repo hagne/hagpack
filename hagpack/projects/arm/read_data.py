@@ -1,10 +1,10 @@
 from netCDF4 import Dataset
 import os
-from hagpack.projects.arm import tdmasize,tdmaapssize,tdmahyg
+from hagpack.projects.arm import _tdmasize,_tdmaapssize,_tdmahyg
 
-arm_products = {'tdmasize':   {'read': tdmasize._parse_netCDF,    'concat': tdmasize._concat_rules},
-                'tdmaapssize':{'read': tdmaapssize._parse_netCDF, 'concat': tdmaapssize._concat_rules},
-                'tdmahyg':    {'read': tdmahyg._parse_netCDF,     'concat': tdmahyg._concat_rules}
+arm_products = {'tdmasize':   {'read': _tdmasize._parse_netCDF,    'concat': _tdmasize._concat_rules},
+                'tdmaapssize':{'read': _tdmaapssize._parse_netCDF, 'concat': _tdmaapssize._concat_rules},
+                'tdmahyg':    {'read': _tdmahyg._parse_netCDF,     'concat': _tdmahyg._concat_rules}
               }
 
 
