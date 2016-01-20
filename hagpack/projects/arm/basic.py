@@ -10,10 +10,10 @@ import os
 # from scipy.optimize import curve_fit
 
 
-from hagpack.projects.arm import tdmasize,tdmaapssizer,tdmahyg
+from hagpack.projects.arm import tdmasize,tdmaapssize,tdmahyg
 
 arm_products = {'tdmasize':   {'read': tdmasize._parse_netCDF,    'concat': tdmasize._concat_rules},
-                'tdmaapssize':{'read': tdmaapssizer._parse_netCDF, 'concat': tdmaapssizer._concat_rules},
+                'tdmaapssize':{'read': tdmaapssize._parse_netCDF, 'concat': tdmaapssizes._concat_rules},
                 'tdmahyg':    {'read': tdmahyg._parse_netCDF,     'concat': tdmahyg._concat_rules}
               }
 

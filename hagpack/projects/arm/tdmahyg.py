@@ -65,7 +65,7 @@ class Tdmahyg(tools.ArmDict):
 
 def _parse_netCDF(file_obj):
     "returns a dictionary, with panels in it"
-    index = tools_get_time(file_obj)
+    index = tools._get_time(file_obj)
     data = file_obj.variables['hyg_distributions'][:]
     growthfactors = file_obj.variables['growthfactors'][:]
     size_bins = file_obj.variables['size_bins'][:]* 1000

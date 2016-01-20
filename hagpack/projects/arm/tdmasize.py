@@ -18,7 +18,7 @@ def _parse_netCDF(file_obj):
     dist = sizedistribution.SizeDist_TS(df,bins,'dNdlogDp')
     dist = dist.convert2dVdlogDp()
 
-    out = basic.ArmDict(plottable = ['size_distribution'])
+    out = tools.ArmDict(plottable = ['size_distribution'])
     out['size_distribution'] = dist
 
     return out
