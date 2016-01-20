@@ -1,19 +1,9 @@
-# import pandas as pd
-# import numpy as np
 from netCDF4 import Dataset
 import os
-# from atmPy import sizedistribution
-# from atmPy.instruments.tools import diameter_binning
-# from atmPy import timeseries
-# from atmPy.aerosols import hygroscopic_growth as hg
-# from atmPy.tools import math_functions
-# from scipy.optimize import curve_fit
-
-
 from hagpack.projects.arm import tdmasize,tdmaapssize,tdmahyg
 
 arm_products = {'tdmasize':   {'read': tdmasize._parse_netCDF,    'concat': tdmasize._concat_rules},
-                'tdmaapssize':{'read': tdmaapssize._parse_netCDF, 'concat': tdmaapssizes._concat_rules},
+                'tdmaapssize':{'read': tdmaapssize._parse_netCDF, 'concat': tdmaapssize._concat_rules},
                 'tdmahyg':    {'read': tdmahyg._parse_netCDF,     'concat': tdmahyg._concat_rules}
               }
 
