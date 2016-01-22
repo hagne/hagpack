@@ -1,5 +1,5 @@
 import pandas as pd
-from hagpack.projects.arm import tools
+from hagpack.projects.arm import _tools
 import numpy as np
 from atmPy import timeseries
 from atmPy.tools import math_functions
@@ -7,9 +7,8 @@ from scipy.optimize import curve_fit
 from atmPy.aerosols import hygroscopic_growth as hg
 
 
-class Tdmahyg(tools.ArmDict):
+class Tdmahyg(_tools.ArmDict):
     def __init__(self,*args,**kwargs):
-        print('loading  sdf tdmahy')
         super(Tdmahyg,self).__init__(*args,**kwargs)
 
     def calc_mean_growth_factor(self):
@@ -29,10 +28,8 @@ class Tdmahyg(tools.ArmDict):
 
     def calc_kappa_values(self):
         if not 'allmeans' in self.keys():
-#             print('calc allmeans')
             allmeans = self.calc_mean_growth_factor()
         else:
-#             print('don"t calc allmeans')
             allmeans = self['allmeans']
 
         RH = self['RH_interDMA']
@@ -65,7 +62,7 @@ class Tdmahyg(tools.ArmDict):
 
 def _parse_netCDF(file_obj):
     "returns a dictionary, with panels in it"
-    index = tools._get_time(file_obj)
+    index = _tools._get_time(file_obj)
     data = file_obj.variables['hyg_distributions'][:]
     growthfactors = file_obj.variables['growthfactors'][:]
     size_bins = file_obj.variables['size_bins'][:]* 1000
@@ -80,7 +77,6 @@ def _parse_netCDF(file_obj):
     out = Tdmahyg(plottable = ['hyg_distributions'], plot_kwargs =  dict(xaxis=0, yaxis = 2, sub_set=5, kwargs = dict(vmin = 0)))
 
 #     data = timeseries.TimeSeries_3D(data)
-    print('shape vor concat ', data.shape)
     data = timeseries.TimeSeries_3D(data)
 #     data.RH_interDMA = RH_interDMA
     out['hyg_distributions'] = data
@@ -96,7 +92,6 @@ def _concat_rules(files):
     data.iloc[:] = np.ma.masked_array(data.values, mask = data.values == -9999.0, fill_value = -9999.0)
     ts = timeseries.TimeSeries_3D(data)
 #     data.RH_interDMA = RH_interDMA
-    print('shape after concat ', ts.data.shape)
     out['hyg_distributions'] = ts
     out['RH_interDMA'] = pd.concat([i['RH_interDMA'] for i in files])
     return out

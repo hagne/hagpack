@@ -1,8 +1,5 @@
 import pandas as pd
 
-
-
-
 def _get_time(file_obj):
     bt = file_obj.variables['base_time']
     toff = file_obj.variables['time_offset']
@@ -18,9 +15,14 @@ class ArmDict(dict):
     def plot(self, which = 'all', fig_size = None):
         if which == 'all':
             for item in self.plottable:
-#                 f,a,b,c = self[item].plot(xaxis=0, yaxis = 2, sub_set=5)#*self.plot_kwargs)
-#                 print(self.plot_kwargs)
-                f,a,b,c = self[item].plot(**self.plot_kwargs)
+                out = self[item].plot(**self.plot_kwargs)
+                if type(out).__name__ == 'AxesSubplot':
+                    a = out
+                elif len(out) == 4:
+                    a = out[1]
+
+                a.set_title(item)
                 if fig_size:
+                    f = a.get_figure()
                     f.set_size_inches((fig_size))
-                return f,a,b,c
+                # return out
