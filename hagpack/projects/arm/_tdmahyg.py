@@ -76,7 +76,7 @@ def _parse_netCDF(file_obj):
 
     out = Tdmahyg(plottable = ['hyg_distributions'], plot_kwargs =  dict(xaxis=0, yaxis = 2, sub_set=5, kwargs = dict(vmin = 0)))
 
-#     data = timeseries.TimeSeries_3D(data)
+#     data = _timeseries.TimeSeries_3D(data)
     data = timeseries.TimeSeries_3D(data)
 #     data.RH_interDMA = RH_interDMA
     out['hyg_distributions'] = data
@@ -87,7 +87,7 @@ def _parse_netCDF(file_obj):
 
 def _concat_rules(files):
     out = Tdmahyg(plottable = ['hyg_distributions'], plot_kwargs =  dict(xaxis=0, yaxis = 2, sub_set=5, kwargs = dict(vmin = 0)))
-#     data = timeseries.TimeSeries_3D(pd.concat([i['hyg_distributions'].data for i in files]))
+#     data = _timeseries.TimeSeries_3D(pd.concat([i['hyg_distributions'].data for i in files]))
     data = pd.concat([i['hyg_distributions'].data for i in files])
     data.iloc[:] = np.ma.masked_array(data.values, mask = data.values == -9999.0, fill_value = -9999.0)
     ts = timeseries.TimeSeries_3D(data)
