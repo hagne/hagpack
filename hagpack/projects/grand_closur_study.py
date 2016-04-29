@@ -8,7 +8,7 @@ def save_figur(fname, fold_name, ax):
         f.savefig(fold_name+ '/' + fname, dpi = 300, transparent= True)
 
 def do_correlate(fold_name, data, correlant, data_name, correlant_name, whats_correlated, data_column=False,
-                         correlant_column=False, xmax=False, ymax=False, zero_intersect=False, text_pos=(0.1, 0.9)):
+                         correlant_column=False, xmax=False, ymax=False, zero_intersect=False, fit_res=(0.1, 0.9)):
     # out = data.correlate_to(correlant)
 
     out = timeseries.correlate(data, correlant, data_column=data_column, correlant_column=correlant_column)
@@ -17,7 +17,7 @@ def do_correlate(fold_name, data, correlant, data_name, correlant_name, whats_co
     out._y_label_orig_correlant = correlant_name
     out._y_label_orig_data = data_name
     a, a1, a2 = out.plot_pearsonANDoriginal_data(zero_intersect=zero_intersect, xlim=xmax,
-                                                 ylim=ymax, corr_kwargs={'text_pos': text_pos})
+                                                 ylim=ymax, corr_kwargs={'fit_res': fit_res})
 
     title = 'Correlation %s  %s/%s' % (whats_correlated, data_name, correlant_name)
     fname = 'correlation_%s__%s_%s.png' % (whats_correlated, data_name, correlant_name)
