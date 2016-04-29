@@ -4,7 +4,9 @@ from atmPy.general import timeseries as _timeseries
 
 products = {'HT_tdmaapshyg_1um_hyg400_rh85v40':     {'info': 'f(RH) calculated from tdmaaps using hygroscopicity from tdmahyg'},
             'HT_tdmaapsscattcoeff_1um_550nm':       {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
-            'HT_tdmaapsmass_1um':                   {'info': 'aerosol mass concentration calculated from tdmaaps using densities from aosacsm'}}
+            'HT_tdmaapsmass_1um':                   {'info': 'aerosol mass concentration calculated from tdmaaps using densities from aosacsm'},
+            'HT_tdmaapsbackscatt_1um_550nm':        {'info': 'hemispheric backscattering calculated from tdmaaps using index of refraction from aosacsm'}
+            }
 
 def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
     all_files = _os.listdir(folder)
