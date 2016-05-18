@@ -30,7 +30,9 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
         if not file.split('.')[0][4:] == prod_name:
             continue
 
-        ts = _timeseries.load_netCDF(folder + file)
+        fname = folder + file
+        #print(fname)
+        ts = _timeseries.load_netCDF(fname)
         all_ts.append(ts)
     #     print('found one: ', folder + file)
 
