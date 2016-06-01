@@ -7,7 +7,13 @@ import warnings as _warnings
 _warnings.catch_warnings()
 _warnings.simplefilter("ignore")
 
-products = {'HT_tdmaapshyg_1um_hyg400_rh85v40':     {'info': 'f(RH) calculated from tdmaaps using hygroscopicity from tdmahyg'},
+products = {'tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm':
+                {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
+            'tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm_good':
+                {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
+            'tdmaaps2scatteringcoeff_RI1o5_1um_550nm':
+                {'info': 'Refractive index is fixed to 1.5'},
+            'HT_tdmaapshyg_1um_hyg400_rh85v40':     {'info': 'f(RH) calculated from tdmaaps using hygroscopicity from tdmahyg'},
             'HT_tdmaapsscattcoeff_1um_550nm':       {'info': 'OLD scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
             'HT_tdmaapsmass_1um':                   {'info': 'aerosol mass concentration calculated from tdmaaps using densities from aosacsm'},
             'HT_tdmaapsbackscatt_1um_550nm':        {'info': 'hemispheric backscattering calculated from tdmaaps using index of refraction from aosacsm'}
@@ -32,7 +38,7 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
             continue
 
         # test for correct product
-        if not file.split('.')[0][4:] == prod_name:
+        if not file.split('.')[0][3:] == prod_name:
             continue
 
         fname = folder + file
@@ -40,7 +46,8 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
         ts = _timeseries.load_netCDF(fname)
         all_ts.append(ts)
     #     print('found one: ', folder + file)
-
+    if len(all_ts) == 0:
+        raise ValueError('no file meets criteria')
     ts_concat = _timeseries.concat(all_ts)
     ts_concat.data.sort_index(inplace=True)
     return ts_concat
@@ -300,7 +307,10 @@ class Tdmaaps2scatteringcoeff(object):
             splitname = _splitup_filename(fname_tdmaapssize)
             site = splitname['site']
             date = splitname['date']
-            name_addon = ('RI%s_%s_%snm' % (self.refractive_index, self.diameter_cutoff, self.wavelength)).replace('.','o')
+            if self.data_quality == 'patchy':
+                name_addon = ('RI%s_%s_%snm' % (self.refractive_index, self.diameter_cutoff, self.wavelength)).replace('.','o')
+            else:
+                name_addon = ('RI%s_%s_%snm_%s' % (self.refractive_index, self.diameter_cutoff, self.wavelength, self.data_quality)).replace('.', 'o')
             my_prod_name = self.folder_out + site + 'tdmaaps2scatteringcoeff_' + name_addon + '.' + date + '.000000.cdf'
 
             if not overwrite:
@@ -339,6 +349,26 @@ class Tdmaaps2scatteringcoeff(object):
 
 def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm():
     out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='1um',
+                                  wavelength=550,
+                                  refractive_index='aosacsm',
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Users/htelg/data/ARM/SGP/',
+                                  test = False)
+    return out
+
+def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm_good():
+    out = Tdmaaps2scatteringcoeff(data_quality='good',
+                                  diameter_cutoff='1um',
+                                  wavelength=550,
+                                  refractive_index='aosacsm',
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Users/htelg/data/ARM/SGP/',
+                                  test = False)
+    return out
+
+def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm_bad():
+    out = Tdmaaps2scatteringcoeff(data_quality='bad',
                                   diameter_cutoff='1um',
                                   wavelength=550,
                                   refractive_index='aosacsm',
