@@ -347,6 +347,7 @@ class Tdmaaps2scatteringcoeff(object):
         else:
             self.result = extcoeff_list[0]
 
+
 def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm():
     out = Tdmaaps2scatteringcoeff(data_quality='patchy',
                                   diameter_cutoff='1um',
@@ -386,3 +387,155 @@ def tdmaaps2scatteringcoeff_RI1o5_1um_550nm():
                                   folder='/Users/htelg/data/ARM/SGP/',
                                   test = False)
     return out
+
+
+class Aipfitrh2Kappa(object):
+    def __init__(self, data_quality='patchy',
+                 diameter_cutoff='1um',
+                 wavelength=550,  # in nm
+                 sizedistribution = 'tdmaapssize',
+                 refractive_index = 1.5, #'aosacsm',
+                 f_of_rh_product = 'f_RH_scatt_2p_85_40',
+                 folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                 folder='/Users/htelg/data/ARM/SGP/',
+                 test = False):
+        """
+
+        Parameters
+        ----------
+        data_quality
+        diameter_cutoff
+        wavelength
+        refractive_index: string or float
+            Define which data product to get the RI from ['aosacsm']
+            or set a fixed value.
+        folder_out
+        folder
+        test
+        """
+        self.wavelength = wavelength
+        self.refractive_index = refractive_index
+        self.sizedistribution = sizedistribution
+        self.f_of_rh_product = f_of_rh_product
+        self.data_quality = data_quality
+        self.diameter_cutoff = diameter_cutoff
+        self.folder_out = folder_out
+        self.folder = folder
+        self.test = test
+        self.test_file = 'sgpaipfitrh1ogrenC1.c1.20120302.000000.cdf'
+
+    def _calculate_one(self, aipfitrh, sizedist, refractive_index):
+        if self.diameter_cutoff == '1um':
+            dcoff = 1000
+        elif self.diameter_cutoff == '10um':
+            dcoff = 10000
+
+        sizedist = sizedist.zoom_diameter(end = dcoff)
+        sizedist.index_of_refraction = refractive_index
+
+        aipfitrh.sup_kappa_sizedist = sizedist
+        aipfitrh.sup_kappa_wavelength = self.wavelength
+
+        if self.f_of_rh_product == 'f_RH_scatt_2p_85_40':
+            aipfitrh.f_RH_scatt_2p_85_40._del_all_columns_but('ratio_85by40_Bs_G_1um_2p', inplace=True)
+            return aipfitrh.kappa_85_40
+
+        else:
+            raise ValueError("Don't know what to do with self.f_of_rh_product = %s"%(self.f_of_rh_product))
+
+    def calculate_new(self):
+        self._calculate_all(False)
+
+    def calculate_all(self):
+        self._calculate_all(True)
+
+    def _calculate_all(self, overwrite, time_window=False, verbose=False):
+
+        if self.f_of_rh_product == 'f_RH_scatt_2p_85_40':
+            RH_for_name = 'RH_85_40'
+
+        kappa_list = []
+        all_files = _os.listdir(self.folder)
+        all_files = _np.array(all_files)
+
+        all_files_aipfitrh = all_files[_np.char.find(all_files, 'aipfitrh1ogrenC1') > -1]
+        test_done = False
+
+        for e, fname_aipfitrh in enumerate(all_files_aipfitrh):
+            if self.test:
+                if fname_aipfitrh == self.test_file:
+                    test_done = True
+                else:
+                    if test_done:
+                        break
+                    else:
+                        continue
+            if time_window:
+                if not _atm_arm._is_in_time_window(fname_aipfitrh, verbose):
+                    continue
+
+            splitname = _splitup_filename(fname_aipfitrh)
+            site = splitname['site']
+            date = splitname['date']
+
+            name_addon = ('%s_%s_RI%s_%s_%snm_%s' % (RH_for_name, self.sizedistribution, self.refractive_index, self.diameter_cutoff, self.wavelength, self.data_quality)).replace('.', 'o')
+            my_prod_name = self.folder_out + site + 'aipfitrh2kappa_' + name_addon + '.' + date + '.000000.cdf'
+
+            if not overwrite:
+                if _os.path.isfile(my_prod_name):
+                    if verbose:
+                        print('product %s already exists' % my_prod_name)
+                    continue
+
+            if self.sizedistribution == 'tdmaapssize':
+                fname_others = _get_other_filenames(fname_aipfitrh, ['tdmaapssize'], all_files)
+                if not fname_others:
+                    continue
+                else:
+                    tdmaaps = _atm_arm.read_cdf(self.folder + fname_others['tdmaapssize']['fname'], data_quality=self.data_quality, verbose=verbose)
+                    sizedist = tdmaaps.size_distribution
+
+            else:
+                txt = "Unknown sizedistribution type (%s). Try one of these: 'tdmaapssize'"%(self.sizedistribution)
+                raise ValueError(txt)
+
+            if self.refractive_index == 'aosacsm':
+                fname_others = _get_other_filenames(fname_aipfitrh, ['aosacsm'], all_files)
+                if not fname_others:
+                    continue
+                else:
+                    aosacsm = _atm_arm.read_cdf(self.folder + fname_others['aosacsm']['fname'], data_quality=self.data_quality, verbose=verbose)
+                    refractive_index = aosacsm.refractive_index
+            elif type(self.refractive_index).__name__ == 'float':
+                refractive_index = self.refractive_index
+
+            aipfitrh = _atm_arm.read_cdf(self.folder + fname_aipfitrh, data_quality=self.data_quality, verbose=verbose)
+
+            kappa = self._calculate_one(aipfitrh, sizedist, refractive_index)
+
+            kappa_list.append(kappa)
+            if not self.test:
+                kappa.save_netCDF(my_prod_name)
+        # if len(extcoeff_list) == 2:
+        #                 break
+
+
+        print(my_prod_name)
+        if len(kappa_list) > 1:
+            extcoeff_cat = _timeseries.concat(kappa_list)
+            self.result = extcoeff_cat.close_gaps(verbose=False)
+        else:
+            self.result = kappa_list[0]
+
+
+def sgpaipfitrh2kappa_RH_85_40_tdmaapssize_RI1o5_1um_550nm_patchy(test = False):
+    product = Aipfitrh2Kappa(data_quality='patchy',
+                             diameter_cutoff='1um',
+                             wavelength=550,
+                             sizedistribution='tdmaapssize',
+                             refractive_index=1.5,
+                             f_of_rh_product='f_RH_scatt_2p_85_40',
+                             folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                             folder='/Users/htelg/data/ARM/SGP/',
+                             test=test)
+    return product
