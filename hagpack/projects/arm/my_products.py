@@ -13,10 +13,14 @@ products = {'tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm':
                 {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
             'tdmaaps2scatteringcoeff_RI1o5_1um_550nm':
                 {'info': 'Refractive index is fixed to 1.5'},
-            'HT_tdmaapshyg_1um_hyg400_rh85v40':     {'info': 'f(RH) calculated from tdmaaps using hygroscopicity from tdmahyg'},
-            'HT_tdmaapsscattcoeff_1um_550nm':       {'info': 'OLD scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
-            'HT_tdmaapsmass_1um':                   {'info': 'aerosol mass concentration calculated from tdmaaps using densities from aosacsm'},
-            'HT_tdmaapsbackscatt_1um_550nm':        {'info': 'hemispheric backscattering calculated from tdmaaps using index of refraction from aosacsm'}
+            'aipfitrh2kappa_RH_85_40_tdmaapssize_RI1o5_1um_550nm_patchy':
+                {'info': 'kappa from aipfitrh'},
+            'tdmahyg2kappa_avg_d200_patchy':
+                {'info': 'kappa from tdmahyg'}
+            # 'HT_tdmaapshyg_1um_hyg400_rh85v40':     {'info': 'f(RH) calculated from tdmaaps using hygroscopicity from tdmahyg'},
+            # 'HT_tdmaapsscattcoeff_1um_550nm':       {'info': 'OLD scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
+            # 'HT_tdmaapsmass_1um':                   {'info': 'aerosol mass concentration calculated from tdmaaps using densities from aosacsm'},
+            # 'HT_tdmaapsbackscatt_1um_550nm':        {'info': 'hemispheric backscattering calculated from tdmaaps using index of refraction from aosacsm'}
             }
 
 def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
@@ -50,6 +54,7 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
         raise ValueError('no file meets criteria')
     ts_concat = _timeseries.concat(all_ts)
     ts_concat.data.sort_index(inplace=True)
+    ts_concat = ts_concat.close_gaps()
     return ts_concat
 
 def _check_availability(folder, prod_name, time_window=('1990-01-01', '2030-01-01'), verbose = False):
@@ -539,3 +544,108 @@ def sgpaipfitrh2kappa_RH_85_40_tdmaapssize_RI1o5_1um_550nm_patchy(test = False):
                              folder='/Users/htelg/data/ARM/SGP/',
                              test=test)
     return product
+
+
+
+
+class Tdmahyg2Kappa(object):
+    def __init__(self, data_quality='patchy',
+                 method = 'avg',
+                 diameter = 200,
+                 folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                 folder='/Users/htelg/data/ARM/SGP/',
+                 test = False):
+        """
+
+        Parameters
+        ----------
+        data_quality
+        method = 'avg' #methode of how kapppa was calculated, 'avg' simply take the average of gf
+        diameter = 200 #center diameter for which the kappa is calculated for
+
+        folder_out
+        folder
+        test
+        """
+        self.data_quality = data_quality
+        self.method = method
+        self.diameter = diameter
+        self.folder_out = folder_out
+        self.folder = folder
+        self.test = test
+        self.test_file = 'sgptdmahygC1.b1.20120301.003735.cdf'
+
+    def _calculate_one(self, tdmahyg):
+        kappas = tdmahyg.kappa_values._del_all_columns_but(self.diameter)
+        kappas1D = _timeseries.TimeSeries(kappas.data)
+        kappas1D._data_period = kappas._data_period
+        return kappas1D
+
+    def calculate_new(self):
+        self._calculate_all(False)
+
+    def calculate_all(self):
+        self._calculate_all(True)
+
+    def _calculate_all(self, overwrite, time_window=False, verbose=False):
+
+
+        kappa_list = []
+        all_files = _os.listdir(self.folder)
+        all_files = _np.array(all_files)
+
+        all_files_tdmahyg = all_files[_np.char.find(all_files, 'tdmahyg') > -1]
+        test_done = False
+
+        for e, fname_tdmahyg in enumerate(all_files_tdmahyg):
+            if self.test:
+                if fname_tdmahyg == self.test_file:
+                    test_done = True
+                else:
+                    if test_done:
+                        break
+                    else:
+                        continue
+            if time_window:
+                if not _atm_arm._is_in_time_window(fname_tdmahyg, verbose):
+                    continue
+
+            splitname = _splitup_filename(fname_tdmahyg)
+            site = splitname['site']
+            date = splitname['date']
+
+            name_addon = ('%s_d%s_%s' % (self.method, self.diameter, self.data_quality)).replace('.', 'o')
+            my_prod_name = self.folder_out + site + 'tdmahyg2kappa_' + name_addon + '.' + date + '.000000.cdf'
+
+            if not overwrite:
+                if _os.path.isfile(my_prod_name):
+                    if verbose:
+                        print('product %s already exists' % my_prod_name)
+                    continue
+
+            tdmahyg = _atm_arm.read_cdf(self.folder + fname_tdmahyg, data_quality=self.data_quality, verbose=verbose)
+
+            kappa = self._calculate_one(tdmahyg)
+
+            kappa_list.append(kappa)
+            if not self.test:
+                kappa.save_netCDF(my_prod_name)
+        # if len(extcoeff_list) == 2:
+        #                 break
+
+
+        print(my_prod_name)
+        if len(kappa_list) > 1:
+            extcoeff_cat = _timeseries.concat(kappa_list)
+            self.result = extcoeff_cat.close_gaps(verbose=False)
+        else:
+            self.result = kappa_list[0]
+
+def sgptdmahyg2kappa_avg_d200_patchy(test = False):
+    prod = Tdmahyg2Kappa(data_quality='patchy',
+                                     method='avg',
+                                     diameter=200,
+                                     folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                     folder='/Users/htelg/data/ARM/SGP/',
+                                     test=test)
+    return prod

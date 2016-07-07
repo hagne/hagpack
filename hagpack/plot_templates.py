@@ -45,6 +45,8 @@ def plot_rolling_time_laps_corr(rtlc_2D, rtlc_dtatmax =None, roll_corr = None, c
         # leg2._loc = (x+0.51,y)
         # lfram2 = leg2.get_frame()
         # lfram2.set_edgecolor('red')
+    else:
+        a2 = None
 
     #     a.set_xlim(right=735025)
     a.grid()
@@ -54,4 +56,9 @@ def plot_rolling_time_laps_corr(rtlc_2D, rtlc_dtatmax =None, roll_corr = None, c
     if save:
         f.savefig(save, dpi = 300, transparent = True)
     # f.savefig('time_laps_corr_all.png', dpi = 300, transparent = True)
-    return a
+    out = {'f':f,
+           'a': a,
+           'a2': a2,
+           'pc': pc,
+           'cb': cb,}
+    return a, out
