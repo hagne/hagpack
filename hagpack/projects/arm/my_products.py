@@ -4,15 +4,18 @@ from atmPy.general import timeseries as _timeseries
 import pandas as _pd
 import numpy as _np
 import warnings as _warnings
+from atmPy import read_file
 _warnings.catch_warnings()
 _warnings.simplefilter("ignore")
 
 products = {'tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm':
-                {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
+                {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm. Particle diameters considered up to 1um. '},
             'tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm_good':
                 {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces from aosacsm '},
             'tdmaaps2scatteringcoeff_RI1o5_1um_550nm':
-                {'info': 'Refractive index is fixed to 1.5'},
+                {'info': 'Refractive index is fixed to 1.5. Particle diameters considered up to 1um.'},
+            'tdmaaps2scatteringcoeff_RI1o5_10um_550nm':
+                {'info': 'scattering (extinction) coefficient calculated from tdmaaps using refrective indeces of 1.5 . Particle diameters considered up to 10um.'},
             'aipfitrh2kappa_RH_85_40_tdmaapssize_RI1o5_1um_550nm_patchy':
                 {'info': 'kappa from aipfitrh'},
             'tdmahyg2kappa_avg_d200_patchy':
@@ -47,7 +50,8 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
 
         fname = folder + file
         #print(fname)
-        ts = _timeseries.load_netCDF(fname)
+        # ts = _timeseries.load_netCDF(fname)
+        ts = read_file.netCDF(fname)
         all_ts.append(ts)
     #     print('found one: ', folder + file)
     if len(all_ts) == 0:
@@ -383,15 +387,29 @@ def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm_bad():
                                   test = False)
     return out
 
-def tdmaaps2scatteringcoeff_RI1o5_1um_550nm():
+def tdmaaps2scatteringcoeff_RI1o5_1um_550nm(test = False):
     out = Tdmaaps2scatteringcoeff(data_quality='patchy',
                                   diameter_cutoff='1um',
                                   wavelength=550,
                                   refractive_index=1.5,
                                   folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
                                   folder='/Users/htelg/data/ARM/SGP/',
-                                  test = False)
+                                  test = test)
     return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm(test = False):
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index=1.5,
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Users/htelg/data/ARM/SGP/',
+                                  test = test)
+    return out
+
+##########################################################################################
+##########################################################################################
+##########################################################################################
 
 
 class Aipfitrh2Kappa(object):
