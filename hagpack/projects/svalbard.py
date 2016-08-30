@@ -300,7 +300,7 @@ def plot_POPS_v_mSASP_OD_corr(sun_int_su,
     if rayleigh:
         a[0].set_xlabel('Optical depth')
     else:
-        a[0].set_xlabel('Arosol optical depth')
+        a[0].set_xlabel('Aerosol optical depth')
     colors_fill = []
     colors_l = []
     for e,aa in enumerate(a):
