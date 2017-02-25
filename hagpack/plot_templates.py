@@ -4,9 +4,10 @@ def plot_rolling_time_laps_corr(rtlc_2D, rtlc_dtatmax =None, roll_corr = None, c
                                 rtlc_dtatmax_label = 'dt at max corr.',
                                 roll_corr_label = 'corr. coeff at dt = 0',
                                 twin_y_label = 'corr. coeff at dt = 0',
+                                cb_pad = 0.1,
                                 save = False):
     # tl_max, tl_full = time_laps
-    f ,a ,pc ,cb = rtlc_2D.plot(cb_kwargs={'pad' :0.1})
+    f ,a ,pc ,cb = rtlc_2D.plot(cb_kwargs={'pad' : cb_pad})
     f.set_figwidth(15)
     a.set_ylabel('dt (min)')
 

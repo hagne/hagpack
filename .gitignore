@@ -55,3 +55,13 @@ docs/_build/
 
 # PyBuilder
 target/
+/hagpack/projects/arm/.ipynb_checkpoints/
+.idea/
+hagpack/.idea/.name
+hagpack/.idea/encodings.xml
+hagpack/.idea/hagpack.iml
+hagpack/.idea/misc.xml
+hagpack/.idea/modules.xml
+hagpack/.idea/vcs.xml
+hagpack/.idea/workspace.xml
+hagpack/projects/arm/.ipynb_checkpoints/
