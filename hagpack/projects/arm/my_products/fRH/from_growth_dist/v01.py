@@ -164,7 +164,7 @@ class Product(object):
             fname_others_tdmahyg = _get_other_filenames(fname_tdmaapssize, ['tdmahyg'], all_files_tdmahyg)
             if not fname_others_tdmahyg:
                 if verbose:
-                    print('acsm file missing .... continue')
+                    print('tdmahyg file missing .... continue')
                 continue
 
             ior = str(self.refractive_index).replace('.','o')

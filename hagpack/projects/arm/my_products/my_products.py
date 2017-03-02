@@ -78,7 +78,8 @@ def load_netCDF(folder, prod_name, time_window, site = 'sgp', verbose = False):
 
         # test for correct product
         if not file.split('.')[0][3:] == prod_name:
-            continue
+            if not file.split('.')[0] == prod_name:
+                continue
 
         fname = folder + file
         #print(fname)
