@@ -1,6 +1,7 @@
 import os as _os
 from atmPy.data_archives.arm import _read_data as _atm_arm
 from atmPy.general import timeseries as _timeseries
+from atmPy.aerosols.physics import hygroscopicity as _hygroscopicity
 import pandas as _pd
 import numpy as _np
 import warnings as _warnings
@@ -384,11 +385,14 @@ class Tdmaaps2scatteringcoeff(object):
                  diameter_cutoff='1um',
                  wavelength=550,  # in nm
                  refractive_index = 'aosacsm',
+                 apply_growth = None,
                  black_carbon = False,
+                 mode_selection = None,
                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
                  folder='/Users/htelg/data/ARM/SGP/',
                  keep_data = False,
-                 test = False):
+                 test = False,
+                 verbose = False):
         """
 
         Parameters
@@ -404,12 +408,17 @@ class Tdmaaps2scatteringcoeff(object):
             'abs_ratio'
             dict: 'noaaaos', will use the absorption measurements from the noaaaos product
             float: fraction to assume to be black carbon, e.g. 0.05 will assume 5% of the accumulation mode to be black carbon
+        mode_selection: [None], {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.63, 0.01), 'gf_coarse': 1.1}
+            If mode selection is to be performed. Dict is expected with keys: 'moment', 'n_accu', 'n_coarse', where
+            moment is the moment at which to perform the mode separation. Does not work for with black_carbon, or
+            absorption. Following kwargs will be ignored: refractive_index, black_carbon
         folder_out
         keep_data: bool
             if the data is returned or discarded after saving it. Returning it can result in massive RAM use.
         folder
         test
         """
+        self.verbose = verbose
         self.wavelength = wavelength
         self.refractive_index = refractive_index
         self.data_quality = data_quality
@@ -432,10 +441,35 @@ class Tdmaaps2scatteringcoeff(object):
                     txt = '%s is an unknown key for kwarg black_carbon. Allowed keys are %s.'%(k, allowed_kwargs_bc.keys())
                     raise KeyError(txt)
 
+        self.mode_sel = mode_selection
+        if self.mode_sel:
+            if self.black_carbon:
+                raise KeyError('If performing mode_sel black_carbon is not allowed.')
+            if self.refractive_index:
+                raise KeyError('If performing mode_sel refractive_index defined in mode_sel, set refractive_index to None.')
+            for k in self.mode_sel.keys():
+                if k not in ['moment', 'n_accu', 'n_coarse', 'gf_coarse']:
+        # if self.mode_sel.keys() != {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': 1.63}.keys():
+                    raise KeyError("Mode selection dict not correct. Should look like this: {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.63, 0.01)}")
+
+            allowed_moments = ['volume']
+            if self.mode_sel['moment'] not in allowed_moments:
+                raise ValueError('Moment {} not implemented. Choose from {}.'.format(self.mode_sel['moment'], allowed_moments))
+
+            allowed_n = ['aosacsm']
+            if type(self.mode_sel['n_accu']) == str:
+                if self.mode_sel['n_accu'] not in allowed_n:
+                    raise ValueError('n_accu has to be in {}. It is {}'.format(allowed_n, self.mode_sel['n_accu']))
+            if type(self.mode_sel['n_coarse']) == str:
+                if self.mode_sel['n_coarse'] not in allowed_n:
+                    raise ValueError('n_coarse has to be in {}. It is {}'.format(allowed_n, self.mode_sel['n_coarse']))
+
+        self.apply_growth = apply_growth
+
         if test:
             self.intres = {}
 
-    def _calculate_one(self, tdmaapssize, refractive_index, abs_ratio, perscribed_absorption):
+    def _calculate_one(self, dist, refractive_index, abs_ratio, perscribed_absorption, growthfct):
         """
 
         Parameters
@@ -454,8 +488,17 @@ class Tdmaaps2scatteringcoeff(object):
         elif self.diameter_cutoff == '10um':
             dcoff = 10000
 
-        dist = tdmaapssize.size_distribution.zoom_diameter(end=dcoff)
+        # if mode_sel:
+
+
+        # dist = tdmaapssize.size_distribution.zoom_diameter(end=dcoff)
+        dist = dist.zoom_diameter(end=dcoff)
         dist = dist.convert2numberconcentration()
+        if growthfct:
+
+            dist = _hygroscopicity.apply_growth2sizedist(dist, growthfct)
+            if self.verbose:
+                print('Applied growth factor of {}'.format(growthfct))
 
         if _np.any(perscribed_absorption):
             dist_bc = dist.copy()
@@ -474,9 +517,15 @@ class Tdmaaps2scatteringcoeff(object):
         if _np.any(abs_ratio):
             dist_bc = dist.copy()
             dist_bc.data = dist_bc.data.mul(abs_ratio, axis = 0)
-            dist_bc.index_of_refraction = complex(2.26,1.26)
-            opt = dist_bc.calculate_optical_properties(self.wavelength)
-            scattcoeff_bc = opt.scattering_coeff
+
+            # dist_bc.index_of_refraction = complex(2.26,1.26)
+            # opt = dist_bc.calculate_optical_properties(self.wavelength)
+            # scattcoeff_bc = opt.scattering_coeff
+
+            dist_bc.optical_properties.parameters.refractive_index = complex(2.26,1.26)
+            dist_bc.optical_properties.parameters.wavelength = self.wavelength
+            scattcoeff_bc = dist_bc.optical_properties.scattering_coeff
+
             scattcoeff_bc.data.values[scattcoeff_bc.data.values == 0] = _np.nan
             scattcoeff_bc.data *= 1e6  # conversion from inverse meter to mega meter
         else:
@@ -484,9 +533,13 @@ class Tdmaaps2scatteringcoeff(object):
 
         dist.data = dist.data.mul((1 - abs_ratio), axis = 0)
 
-        dist.index_of_refraction = refractive_index
-        opt = dist.calculate_optical_properties(self.wavelength)
-        scattcoeff = opt.scattering_coeff
+        # dist.index_of_refraction = refractive_index
+        # opt = dist.calculate_optical_properties(self.wavelength)
+        dist.optical_properties.parameters.refractive_index = refractive_index
+        dist.optical_properties.parameters.wavelength = self.wavelength
+
+        scattcoeff = dist.optical_properties.scattering_coeff
+        # scattcoeff = opt.scattering_coeff
         scattcoeff.data.values[scattcoeff.data.values == 0] = _np.nan
         scattcoeff.data *= 1e6  # conversion from inverse meter to mega meter
 
@@ -517,16 +570,23 @@ class Tdmaaps2scatteringcoeff(object):
                     pat = '%.1f'%perscribed_absorption
                 bc_name_signitur = ('_bc_abs_%s' %pat).replace('.', 'o')
 
-        if self.keep_data:
-            extcoeff_list = []
+        if self.mode_sel:
+            if 'aosacsm' in [self.mode_sel['n_accu'], self.mode_sel['n_coarse']]:
+                self.refractive_index = 'aosacsm'
 
-        all_files = _os.listdir(self.folder)
+        if self.keep_data:
+            scattcoeff_list = []
+
+        all_files = _os.listdir(self.folder + 'tdmaaps/')
         all_files = _np.array(all_files)
         all_files_tdmaapssize = all_files[_np.char.find(all_files, 'tdmaapssize') > -1]
+        all_files_acsm = _np.array(_os.listdir(self.folder + 'acsm/'))
         test_done = False
         for e, fname_tdmaapssize in enumerate(all_files_tdmaapssize):
             if self.test:
                 if fname_tdmaapssize == self.test_file:
+                    if self.verbose:
+                        print('found test file {}'.format(self.test_file))
                     test_done = True
                 else:
                     if test_done:
@@ -535,29 +595,47 @@ class Tdmaaps2scatteringcoeff(object):
                         continue
             if time_window:
                 if not _atm_arm._is_in_time_window(fname_tdmaapssize, verbose):
+                    if self.verbose:
+                        print('{} not in time window'.format(fname_tdmaapssize))
                     continue
 
             splitname = _splitup_filename(fname_tdmaapssize)
             site = splitname['site']
             date = splitname['date']
-            if self.data_quality == 'patchy':
-                name_addon = ('_RI%s_%s_%snm' % (self.refractive_index, self.diameter_cutoff, self.wavelength)).replace('.','o')
+            if self.mode_sel:
+                com2str = lambda x: '{:0.2f}j{:0.3f}'.format(x.real, x.imag) if type(x) != str else x
+                refidxname = 'modesel_{}_{}'.format(com2str(self.mode_sel['n_accu']), com2str(self.mode_sel['n_coarse']))
+                if 'gf_coarse' in self.mode_sel.keys():
+                    refidxname += '_gfc{:0.2f}'.format(self.mode_sel['gf_coarse'])
             else:
-                name_addon = ('_RI%s_%s_%snm_%s' % (self.refractive_index, self.diameter_cutoff, self.wavelength, self.data_quality)).replace('.', 'o')
+                refidxname = self.refractive_index
+
+            name_addon = '_RI%s_%s_%snm' % (refidxname, self.diameter_cutoff, self.wavelength)
+
+            if self.apply_growth:
+                name_addon += '_gf{:.2f}'.format(self.apply_growth)
+
+            if self.data_quality != 'patchy':
+                name_addon += '{}'.format(self.data_quality)
+
+
+            name_addon = name_addon.replace('.', 'o')
             my_prod_name = self.folder_out + site + 'tdmaaps2scatteringcoeff' + bc_name_signitur + name_addon + '.' + date + '.000000.cdf'
 
             if not overwrite:
                 if _os.path.isfile(my_prod_name):
-                    if verbose:
+                    if self.verbose:
                         print('product %s already exists' % my_prod_name)
                     continue
 
             if self.refractive_index == 'aosacsm':
-                fname_others = _get_other_filenames(fname_tdmaapssize, ['aosacsm'], all_files)
+                fname_others = _get_other_filenames(fname_tdmaapssize, ['aosacsm'], all_files_acsm)
                 if not fname_others:
+                    if self.verbose:
+                        print('no matching acsm file found')
                     continue
                 else:
-                    aosacsm = _atm_arm.read_cdf(self.folder + fname_others['aosacsm']['fname'], data_quality=self.data_quality, verbose=verbose)
+                    aosacsm = _atm_arm.read_cdf(self.folder + 'acsm/' + fname_others['aosacsm']['fname'], data_quality=self.data_quality, verbose=verbose)
                     refractive_index = aosacsm.refractive_index
             elif type(self.refractive_index).__name__ == 'float':
                 refractive_index = self.refractive_index
@@ -569,7 +647,7 @@ class Tdmaaps2scatteringcoeff(object):
                         if not fname_others:
                             continue
                         else:
-                            noaaaos = _atm_arm.read_cdf(self.folder + fname_others['noaaaos']['fname'], data_quality=self.data_quality, verbose=verbose)
+                            noaaaos = _atm_arm.read_cdf(self.folder + 'noaaaos/' + fname_others['noaaaos']['fname'], data_quality=self.data_quality, verbose=verbose)
                             if self.wavelength == 550 and self.diameter_cutoff == '1um':
                                 keep = 'Ba_G_Dry_1um_PSAP1W_1'
                             elif self.wavelength == 550 and self.diameter_cutoff == '10um':
@@ -580,26 +658,474 @@ class Tdmaaps2scatteringcoeff(object):
                             perscribed_absorption.data.rename(columns={keep: 'perscribed_absorption'}, inplace=True)
 
 
-            tdmaapssize = _atm_arm.read_cdf(self.folder + fname_tdmaapssize, data_quality=self.data_quality, verbose=verbose)
+            tdmaapssize = _atm_arm.read_cdf(self.folder  + 'tdmaaps/' + fname_tdmaapssize, data_quality=self.data_quality, verbose=verbose)
 
-            extcoeff = self._calculate_one(tdmaapssize, refractive_index, bc_ratio, perscribed_absorption)
+            if self.mode_sel:
+                dist = tdmaapssize.size_distribution
+                n_accu = refractive_index if self.mode_sel['n_accu'] == 'aosacsm' else self.mode_sel['n_accu']
+                n_coarse = refractive_index if self.mode_sel['n_coarse'] == 'aosacsm' else self.mode_sel['n_coarse']
+                if self.mode_sel['moment'] ==  'volume':
+                    dist = dist.convert2dVdlogDp()
+                else:
+                    raise KeyError('not possible')
+                dist_accu = dist.mode_analysis.size_dist_accu
+                dist_coarse = dist.mode_analysis.size_dist_coarse
+                scattaccu = self._calculate_one(dist_accu, n_accu, bc_ratio, perscribed_absorption, None)
+                if 'gf_coarse' in self.mode_sel.keys():
+                    gf = self.mode_sel['gf_coarse']
+                else:
+                    gf = None
+                scattcoarse = self._calculate_one(dist_coarse, n_coarse, bc_ratio, perscribed_absorption, gf)
+                scattcoeff = scattaccu + scattcoarse
+            else:
+                scattcoeff = self._calculate_one(tdmaapssize.size_distribution, refractive_index, bc_ratio, perscribed_absorption, self.apply_growth)
 
             if self.keep_data:
-                extcoeff_list.append(extcoeff)
+                scattcoeff_list.append(scattcoeff)
             if not self.test:
-                extcoeff.save_netCDF(my_prod_name)
+                scattcoeff.save_netCDF(my_prod_name)
         # if len(extcoeff_list) == 2:
         #                 break
 
 
         print(my_prod_name)
         if self.keep_data:
-            if len(extcoeff_list) > 1:
-                extcoeff_cat = _timeseries.concat(extcoeff_list)
+            if len(scattcoeff_list) > 1:
+                extcoeff_cat = _timeseries.concat(scattcoeff_list)
                 self.result = extcoeff_cat.close_gaps(verbose=False)
             else:
-                self.result = extcoeff_list[0]
+                self.result = scattcoeff_list[0]
 
+#########################
+###### apply growth
+#########################
+#### to coarse mode only
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc1o40_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 1.4},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc1o30_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 1.3},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc1o20_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 1.2},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc1o10_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 1.1},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc0o70_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 0.7},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc0o90_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 0.9},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o010_gfc0o80_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= None,
+                                  mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                  'n_coarse': complex(1.6, 0.01), 'gf_coarse': 0.8},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+#### overall
+
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf0o70(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 0.7,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf0o80(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 0.8,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf0o90(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 0.9,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf1o10(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 1.1,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf1o20(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 1.2,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf1o30(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 1.3,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RI1o5_10um_550nm_gf1o40(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                  diameter_cutoff='10um',
+                                  wavelength=550,
+                                  refractive_index= 1.5,
+                                  apply_growth = 1.4,
+#                                               mode_selection= {'moment':'volume', 'n_accu':'aosacsm', 'n_coarse': complex(1.6, 0.01)},
+#                                               mode_selection= {'moment':'volume', 'n_accu':'acsm', 'n_coarse': complex(1.63, 0.01)},
+                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                  folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                  test=test,
+                                  keep_data=keep_data,
+                                  verbose=verbose)
+    return out
+###################
+### mode sel all n fixed
+###################
+
+def tdmaaps2scatteringcoeff_RImodesel_1o50j0o00_1o63j0o01_1um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='1um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 1.5,
+                                                      'n_coarse': complex(1.63, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_1o50j0o00_1o63j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 1.5,
+                                                      'n_coarse': complex(1.63, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+########
+### coarse mode n dependence
+#######
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o66j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.66, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o57j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.57, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o54j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.54, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o60j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.6, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o01_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+############
+### Coarse mode imaginary part of n dependence
+##########
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o00_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': 1.63},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o005_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.005)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o015_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.015)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o025_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.025)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o02_10um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='10um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.02)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
+
+def tdmaaps2scatteringcoeff_RImodesel_aosacsm_1o63j0o01_1um_550nm(test = False):
+    keep_data = verbose = True if test else False
+    out = Tdmaaps2scatteringcoeff(data_quality='patchy',
+                                      diameter_cutoff='1um',
+                                      wavelength=550,
+                                      refractive_index=None,
+                                      mode_selection={'moment': 'volume', 'n_accu': 'aosacsm',
+                                                      'n_coarse': complex(1.63, 0.01)},
+                                      folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
+                                      folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
+                                      test=test,
+                                      keep_data=keep_data,
+                                      verbose=verbose)
+    return out
 
 def tdmaaps2scatteringcoeff_RIaosacsm_1um_550nm(test = False):
     out = Tdmaaps2scatteringcoeff(data_quality='patchy',
@@ -670,7 +1196,7 @@ def tdmaaps2scatteringcoeff_bc_ratio_0o050_RI1o5_10um_550nm(test = False):
                                  refractive_index=1.5,
                                  black_carbon={'bc_ratio': 0.05},
                                  folder_out='/Users/htelg/data/ARM/myproducts/SGP/',
-                                 folder='/Users/htelg/data/ARM/SGP/',
+                                 folder='/Volumes/HTelg_4TB_Backup/arm_data/SGP/',
                                  test=test)
     return out
 
