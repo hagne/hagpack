@@ -23,7 +23,7 @@ def do_correlate(fold_name, data, correlant, data_name, correlant_name, whats_co
     # out = data.correlate_to(correlant)
     def save_corr_res(output_folder_data):
         res = out.orthogonla_distance_regression['output']
-        res_out = {'m': res.beta[0], 'c': res.beta[1]}
+        res_out = {'c': res.beta[0], 'm': res.beta[1]}
         res_out['std'] = np.sqrt(res.res_var)
         res_out['r'] = out.pearson_r[0]
         res_out
